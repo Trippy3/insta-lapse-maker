@@ -71,7 +71,7 @@ export function KenBurnsEditor({ clip }: KenBurnsEditorProps) {
         <div className="row">
           {!kb ? (
             <button className="primary" onClick={enable}>
-              Ken Burns を有効化
+              カメラワークを有効化
             </button>
           ) : (
             <>
@@ -91,7 +91,7 @@ export function KenBurnsEditor({ clip }: KenBurnsEditorProps) {
           )}
         </div>
         {kb && (
-          <button onClick={disable}>Ken Burns 解除</button>
+          <button onClick={disable}>カメラワーク解除</button>
         )}
       </div>
 

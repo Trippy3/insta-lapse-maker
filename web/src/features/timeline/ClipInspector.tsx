@@ -56,7 +56,7 @@ export function ClipInspector() {
           style={{ width: "100%" }}
           onClick={() => setKbOpen((o) => !o)}
         >
-          {kbOpen ? "▼" : "▶"} Ken Burns {clip.ken_burns ? `(${clip.ken_burns.easing})` : "(未設定)"}
+          {kbOpen ? "▼" : "▶"} カメラワーク {clip.ken_burns ? "(設定済み)" : "(未設定)"}
         </button>
         {kbOpen && <KenBurnsEditor clip={clip} />}
       </div>

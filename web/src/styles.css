@@ -120,6 +120,7 @@ input[type="text"], input[type="number"] {
   background: var(--bg);
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .preview-frame {
@@ -734,9 +735,13 @@ input[type="text"], input[type="number"] {
 
 /* Phase 6: ライブプレビュー */
 .preview-mode-tabs {
+  position: absolute;
+  top: 16px;
+  left: 16px;
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  margin-bottom: 6px;
+  z-index: 10;
 }
 
 .preview-tab {
