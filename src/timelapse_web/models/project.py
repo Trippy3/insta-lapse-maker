@@ -5,9 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from timelapse.reels_spec import (
     REELS_FPS,
@@ -45,13 +44,11 @@ class Rect01(BaseModel):
         return self
 
 
-CropAspect = Literal["1:1", "9:16"]
-
-
 class CropRect(BaseModel):
     """ソース画像へのクロップ指示。"""
 
-    aspect: CropAspect
+    model_config = ConfigDict(extra="ignore")
+
     x: float = Field(ge=0.0, le=1.0)
     y: float = Field(ge=0.0, le=1.0)
     w: float = Field(gt=0.0, le=1.0)

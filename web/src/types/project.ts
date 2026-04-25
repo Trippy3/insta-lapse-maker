@@ -1,8 +1,6 @@
 // バックエンド src/timelapse_web/models/project.py と jobs.py に対応する TS 型。
 // 手動同期。Phase 1 が固まったら OpenAPI 自動生成に置き換えを検討する。
 
-export type CropAspect = "1:1" | "9:16";
-
 export interface Rect01 {
   x: number;
   y: number;
@@ -11,7 +9,6 @@ export interface Rect01 {
 }
 
 export interface CropRect {
-  aspect: CropAspect;
   x: number;
   y: number;
   w: number;

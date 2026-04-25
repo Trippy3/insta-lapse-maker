@@ -47,7 +47,7 @@ def test_filter_complex_contains_scale_pad_and_concat(tmp_path: Path):
 
 def test_filter_complex_includes_crop_filter_when_set(tmp_path: Path):
     project = _project_2clips(tmp_path)
-    project.clips[0].crop = CropRect(aspect="1:1", x=0.1, y=0.2, w=0.5, h=0.5)
+    project.clips[0].crop = CropRect(x=0.1, y=0.2, w=0.5, h=0.5)
     target = RenderTarget.from_project(project)
     fc = build_filter_complex(project, target)
     assert "crop=" in fc
@@ -91,7 +91,7 @@ def test_filter_complex_without_crop_has_no_crop_expr(tmp_path: Path):
 
 def test_crop_filter_emits_all_four_normalized_values(tmp_path: Path):
     project = _project_2clips(tmp_path)
-    project.clips[0].crop = CropRect(aspect="9:16", x=0.0, y=0.1, w=0.5625, h=1.0 - 0.1 - 1e-6)
+    project.clips[0].crop = CropRect(x=0.0, y=0.1, w=0.5625, h=1.0 - 0.1 - 1e-6)
     target = RenderTarget.from_project(project)
     fc = build_filter_complex(project, target)
     # 9:16 切り抜き後 → scale+pad で 1080x1920 にフィット
@@ -104,9 +104,9 @@ def test_crop_rect_pydantic_rejects_overflow():
     import pydantic
 
     with pytest.raises(pydantic.ValidationError):
-        CropRect(aspect="1:1", x=0.5, y=0.5, w=0.6, h=0.1)
+        CropRect(x=0.5, y=0.5, w=0.6, h=0.1)
     with pytest.raises(pydantic.ValidationError):
-        CropRect(aspect="1:1", x=0.0, y=0.0, w=0.0, h=0.5)
+        CropRect(x=0.0, y=0.0, w=0.0, h=0.5)
 
 
 def test_empty_project_raises(tmp_path: Path):

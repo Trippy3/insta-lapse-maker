@@ -92,7 +92,7 @@ export function LivePreview() {
               y={clip.crop.y * CANVAS_H}
               width={clip.crop.w * CANVAS_W}
               height={clip.crop.h * CANVAS_H}
-              stroke={clip.crop.aspect === "9:16" ? "#3b82f6" : "#eab308"}
+              stroke="#3b82f6"
               strokeWidth={2}
               dash={[6, 3]}
               fill="rgba(0,0,0,0)"

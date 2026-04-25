@@ -46,7 +46,7 @@ export function ClipInspector() {
           style={{ width: "100%" }}
           onClick={() => setCropOpen((o) => !o)}
         >
-          {cropOpen ? "▼" : "▶"} トリミング {clip.crop ? `(${clip.crop.aspect})` : "(未設定)"}
+          {cropOpen ? "▼" : "▶"} トリミング {clip.crop ? "(設定済み)" : "(未設定)"}
         </button>
         {cropOpen && <CropEditor clip={clip} />}
       </div>
