@@ -1,0 +1,36 @@
+"""Instagram Reels 仕様定数。仕様変更時はここだけ修正する。"""
+
+# 解像度
+REELS_WIDTH = 1080
+REELS_HEIGHT = 1920
+REELS_ASPECT_RATIO = "9:16"
+
+# 動画
+REELS_FPS = 30
+REELS_MIN_DURATION_SEC = 3
+REELS_MAX_DURATION_SEC = 90
+REELS_MAX_FILE_SIZE_BYTES = 4 * 1024 ** 3  # 4GB
+
+# エンコード (H.264)
+VIDEO_CODEC = "libx264"
+VIDEO_PROFILE = "high"
+VIDEO_LEVEL = "4.0"
+VIDEO_BITRATE = "5000k"
+VIDEO_MAXRATE = "8000k"
+VIDEO_BUFSIZE = "10000k"
+VIDEO_GOP_SEC = 2  # キーフレーム間隔 (秒)
+VIDEO_MAX_B_FRAMES = 2
+VIDEO_PIX_FMT = "yuv420p"  # 4:2:0 クロマサブサンプリング
+
+# 音声 (AAC-LC)
+AUDIO_CODEC = "aac"
+AUDIO_BITRATE = "128k"
+AUDIO_SAMPLE_RATE = 48000
+AUDIO_CHANNELS = 2
+
+# FFmpeg 出力フラグ
+MOVFLAGS = "+faststart"
+
+# セーフゾーン (ピクセル): UI 要素が重なる領域
+SAFE_ZONE_TOP = 250
+SAFE_ZONE_BOTTOM = 600
