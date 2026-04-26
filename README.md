@@ -1,6 +1,9 @@
-# timelapse
+# Insta-Lapse-Maker
 
 絵画制作過程の写真群から **Instagram Reels 用タイムラプス動画** (1080×1920 / 30fps / H.264) を生成するツールです。ブラウザ上で編集できる **Web UI** と、フォルダを指定するだけで動画化する **CLI** の 2 つの使い方があります。
+
+<img width="1693" height="844" alt="timelaspe_maker" src="https://github.com/user-attachments/assets/7f27867e-c9b0-4cb6-9430-4bc43579f6f0" />
+
 
 ---
 
