@@ -11,6 +11,8 @@ interface CropEditorProps {
   clip: Clip;
 }
 
+const DEFAULT_CROP: CropRect = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+
 export function CropEditor({ clip }: CropEditorProps) {
   const setCrop = useProjectStore((s) => s.setClipCrop);
   const cropperRef = useRef<CropperRef>(null);
@@ -28,7 +30,9 @@ export function CropEditor({ clip }: CropEditorProps) {
     };
   }, [natural, clip.crop]);
 
-  const handleChange = (cropper: CropperRef) => {
+  // ユーザーが Cropper を実際に操作した時のみ commit する。
+  // Cropper はマウント時にも onChange を発火するため、それを採らない。
+  const handleInteractionEnd = (cropper: CropperRef) => {
     const state: CropperState | null = cropper.getState();
     const coords = cropper.getCoordinates();
     if (!state || !coords || !state.imageSize) return;
@@ -49,16 +53,34 @@ export function CropEditor({ clip }: CropEditorProps) {
     }
   };
 
+  const handleAdd = () => {
+    setCrop(clip.id, { ...DEFAULT_CROP });
+  };
+
   const handleReset = () => {
     setCrop(clip.id, null);
   };
 
+  if (!clip.crop) {
+    return (
+      <div className="crop-editor">
+        <div className="crop-empty-stage">
+          <img src={imageUrl} alt="" className="crop-empty-image" />
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end" }}>
+          <button onClick={handleAdd}>クロップを追加</button>
+        </div>
+        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+          クロップ未設定 (元画像のまま)
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="crop-editor">
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button onClick={handleReset} disabled={!clip.crop}>
-          クロップ解除
-        </button>
+        <button onClick={handleReset}>クロップ解除</button>
       </div>
 
       <div className="crop-stage">
@@ -69,19 +91,13 @@ export function CropEditor({ clip }: CropEditorProps) {
           className="crop-canvas"
           stencilProps={{ grid: true }}
           defaultCoordinates={defaultCoordinates}
-          onChange={handleChange}
+          onInteractionEnd={handleInteractionEnd}
         />
       </div>
 
-      {clip.crop ? (
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-          {`x:${clip.crop.x.toFixed(3)} y:${clip.crop.y.toFixed(3)} w:${clip.crop.w.toFixed(3)} h:${clip.crop.h.toFixed(3)}`}
-        </div>
-      ) : (
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-          クロップ未設定 (黒帯のみ)
-        </div>
-      )}
+      <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+        {`x:${clip.crop.x.toFixed(3)} y:${clip.crop.y.toFixed(3)} w:${clip.crop.w.toFixed(3)} h:${clip.crop.h.toFixed(3)}`}
+      </div>
     </div>
   );
 }

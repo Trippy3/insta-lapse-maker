@@ -81,7 +81,8 @@ def test_proxy_target_is_even_resolution_half_default():
     assert target.height % 2 == 0
     assert target.width == 540
     assert target.height == 960
-    assert target.fps == 15
+    # プロキシは出力と同じ fps を使う (秒数のズレを防ぐため)
+    assert target.fps == p.output.fps
 
 
 def test_filter_complex_without_crop_has_no_crop_expr(tmp_path: Path):

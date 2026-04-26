@@ -4,6 +4,7 @@ import { Cropper } from "react-advanced-cropper";
 import "react-advanced-cropper/dist/style.css";
 import { api } from "../../api/client";
 import { useProjectStore } from "../../store/useProjectStore";
+const DEFAULT_CROP = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
 export function CropEditor({ clip }) {
     const setCrop = useProjectStore((s) => s.setClipCrop);
     const cropperRef = useRef(null);
@@ -19,7 +20,9 @@ export function CropEditor({ clip }) {
             height: clip.crop.h * natural.h,
         };
     }, [natural, clip.crop]);
-    const handleChange = (cropper) => {
+    // ユーザーが Cropper を実際に操作した時のみ commit する。
+    // Cropper はマウント時にも onChange を発火するため、それを採らない。
+    const handleInteractionEnd = (cropper) => {
         const state = cropper.getState();
         const coords = cropper.getCoordinates();
         if (!state || !coords || !state.imageSize)
@@ -41,10 +44,16 @@ export function CropEditor({ clip }) {
             setCrop(clip.id, next);
         }
     };
+    const handleAdd = () => {
+        setCrop(clip.id, { ...DEFAULT_CROP });
+    };
     const handleReset = () => {
         setCrop(clip.id, null);
     };
-    return (_jsxs("div", { className: "crop-editor", children: [_jsx("div", { className: "row", style: { justifyContent: "flex-end" }, children: _jsx("button", { onClick: handleReset, disabled: !clip.crop, children: "\u30AF\u30ED\u30C3\u30D7\u89E3\u9664" }) }), _jsx("div", { className: "crop-stage", children: _jsx(Cropper, { ref: cropperRef, src: imageUrl, className: "crop-canvas", stencilProps: { grid: true }, defaultCoordinates: defaultCoordinates, onChange: handleChange }, clip.id) }), clip.crop ? (_jsx("div", { style: { fontSize: 10, color: "var(--text-dim)" }, children: `x:${clip.crop.x.toFixed(3)} y:${clip.crop.y.toFixed(3)} w:${clip.crop.w.toFixed(3)} h:${clip.crop.h.toFixed(3)}` })) : (_jsx("div", { style: { fontSize: 10, color: "var(--text-dim)" }, children: "\u30AF\u30ED\u30C3\u30D7\u672A\u8A2D\u5B9A (\u9ED2\u5E2F\u306E\u307F)" }))] }));
+    if (!clip.crop) {
+        return (_jsxs("div", { className: "crop-editor", children: [_jsx("div", { className: "crop-empty-stage", children: _jsx("img", { src: imageUrl, alt: "", className: "crop-empty-image" }) }), _jsx("div", { className: "row", style: { justifyContent: "flex-end" }, children: _jsx("button", { onClick: handleAdd, children: "\u30AF\u30ED\u30C3\u30D7\u3092\u8FFD\u52A0" }) }), _jsx("div", { style: { fontSize: 10, color: "var(--text-dim)" }, children: "\u30AF\u30ED\u30C3\u30D7\u672A\u8A2D\u5B9A (\u5143\u753B\u50CF\u306E\u307E\u307E)" })] }));
+    }
+    return (_jsxs("div", { className: "crop-editor", children: [_jsx("div", { className: "row", style: { justifyContent: "flex-end" }, children: _jsx("button", { onClick: handleReset, children: "\u30AF\u30ED\u30C3\u30D7\u89E3\u9664" }) }), _jsx("div", { className: "crop-stage", children: _jsx(Cropper, { ref: cropperRef, src: imageUrl, className: "crop-canvas", stencilProps: { grid: true }, defaultCoordinates: defaultCoordinates, onInteractionEnd: handleInteractionEnd }, clip.id) }), _jsx("div", { style: { fontSize: 10, color: "var(--text-dim)" }, children: `x:${clip.crop.x.toFixed(3)} y:${clip.crop.y.toFixed(3)} w:${clip.crop.w.toFixed(3)} h:${clip.crop.h.toFixed(3)}` })] }));
 }
 function clamp01(v) {
     if (!Number.isFinite(v))

@@ -36,17 +36,17 @@ export function LivePreview({ onAspectChange }) {
         return sorted.find((c) => c.id === selectedClipId) ?? sorted[0] ?? null;
     }, [clips, selectedClipId]);
     const [img] = useImage(clip ? api.thumbnailUrl(clip.source_path) : "", "anonymous");
-    // 画像のアスペクト比を親 (PreviewPanel) に伝え、.preview-frame の枠が
-    // 画像比率に合わせて伸縮するようにする。
     const imageAspect = useMemo(() => {
         if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0)
             return null;
         return img.naturalWidth / img.naturalHeight;
     }, [img]);
+    // 画像のアスペクト比を親 (PreviewPanel) に伝え、.preview-frame の枠が
+    // 画像比率に追従するヒントとして使う。Stage 内では別途レターボックス
+    // するため、親 CSS が効かなくても画像は歪まない。
     useEffect(() => {
         onAspectChange?.(imageAspect);
     }, [imageAspect, onAspectChange]);
-    // 親要素 (.preview-frame 内) の実サイズを観察し、Stage を埋める。
     const wrapRef = useRef(null);
     const [size, setSize] = useState({
         w: FALLBACK_W,
@@ -69,18 +69,36 @@ export function LivePreview({ onAspectChange }) {
     }, []);
     const canvasW = size.w;
     const canvasH = size.h;
+    // Stage 内で画像をアスペクト保存して中央に配置 (object-fit:contain 相当)。
+    // 親要素の比率が画像と一致しなくても、画像は決して歪まない。
+    const imageBox = useMemo(() => {
+        if (!imageAspect || canvasW <= 0 || canvasH <= 0)
+            return null;
+        const stageAspect = canvasW / canvasH;
+        if (imageAspect >= stageAspect) {
+            // 画像が横長: 幅をフィットさせて上下にレターボックス
+            const w = canvasW;
+            const h = canvasW / imageAspect;
+            return { x: 0, y: (canvasH - h) / 2, w, h };
+        }
+        // 画像が縦長: 高さをフィットさせて左右にレターボックス
+        const h = canvasH;
+        const w = canvasH * imageAspect;
+        return { x: (canvasW - w) / 2, y: 0, w, h };
+    }, [imageAspect, canvasW, canvasH]);
     // 出力動画 (9:16) のセーフエリアを scale+pad の挙動と同じく中央に配置する。
     // crop 設定時はサーバ側 scale_pad は crop 後の画像で動作するため、
     // ここでは未設定時 (= 元画像) のセーフエリアを描画する近似実装とする。
     const safeArea = useMemo(() => {
-        if (!imageAspect || canvasW <= 0 || canvasH <= 0)
+        if (!imageBox)
             return null;
-        if (imageAspect >= OUTPUT_ASPECT) {
-            const safeW = canvasH * OUTPUT_ASPECT;
-            return { x: (canvasW - safeW) / 2, y: 0, w: safeW, h: canvasH };
+        const ib = imageBox;
+        if (ib.w / ib.h >= OUTPUT_ASPECT) {
+            const safeW = ib.h * OUTPUT_ASPECT;
+            return { x: ib.x + (ib.w - safeW) / 2, y: ib.y, w: safeW, h: ib.h };
         }
-        const safeH = canvasW / OUTPUT_ASPECT;
-        return { x: 0, y: (canvasH - safeH) / 2, w: canvasW, h: safeH };
-    }, [imageAspect, canvasW, canvasH]);
-    return (_jsxs("div", { ref: wrapRef, className: "live-preview-wrap", style: { width: "100%", height: "100%" }, children: [_jsx(Stage, { width: canvasW, height: canvasH, children: _jsxs(Layer, { children: [_jsx(Rect, { x: 0, y: 0, width: canvasW, height: canvasH, fill: "#111" }), img && (_jsx(KonvaImage, { image: img, x: 0, y: 0, width: canvasW, height: canvasH })), clip?.crop && (_jsx(Rect, { x: clip.crop.x * canvasW, y: clip.crop.y * canvasH, width: clip.crop.w * canvasW, height: clip.crop.h * canvasH, stroke: "#3b82f6", strokeWidth: 2, dash: [6, 3], fill: "rgba(0,0,0,0)" })), safeArea && (_jsx(Rect, { x: safeArea.x, y: safeArea.y, width: safeArea.w, height: safeArea.h, stroke: "#888", strokeWidth: 1, dash: [2, 4], fill: "rgba(0,0,0,0)", listening: false })), safeArea && clip?.ken_burns && (_jsx(Rect, { x: safeArea.x + clip.ken_burns.start_rect.x * safeArea.w, y: safeArea.y + clip.ken_burns.start_rect.y * safeArea.h, width: clip.ken_burns.start_rect.w * safeArea.w, height: clip.ken_burns.start_rect.h * safeArea.h, stroke: "#22c55e", strokeWidth: 2, dash: [4, 4], fill: "rgba(34,197,94,0.08)" })), safeArea && clip?.ken_burns && (_jsx(Rect, { x: safeArea.x + clip.ken_burns.end_rect.x * safeArea.w, y: safeArea.y + clip.ken_burns.end_rect.y * safeArea.h, width: clip.ken_burns.end_rect.w * safeArea.w, height: clip.ken_burns.end_rect.h * safeArea.h, stroke: "#ef4444", strokeWidth: 2, dash: [4, 4], fill: "rgba(239,68,68,0.08)" })), safeArea && overlays.map((overlay) => (_jsx(OverlayText, { overlay: overlay, area: safeArea }, overlay.id)))] }) }), !clip && (_jsx("div", { className: "live-preview-empty", children: "\u30AF\u30EA\u30C3\u30D7\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044" })), clip?.ken_burns && (_jsxs("div", { className: "live-preview-legend", children: [_jsx("span", { style: { color: "#22c55e" }, children: "\u25A0" }), " \u958B\u59CB", _jsx("span", { style: { color: "#ef4444", marginLeft: 8 }, children: "\u25A0" }), " \u7D42\u4E86"] }))] }));
+        const safeH = ib.w / OUTPUT_ASPECT;
+        return { x: ib.x, y: ib.y + (ib.h - safeH) / 2, w: ib.w, h: safeH };
+    }, [imageBox]);
+    return (_jsxs("div", { ref: wrapRef, className: "live-preview-wrap", style: { width: "100%", height: "100%" }, children: [_jsx(Stage, { width: canvasW, height: canvasH, children: _jsxs(Layer, { children: [_jsx(Rect, { x: 0, y: 0, width: canvasW, height: canvasH, fill: "#111" }), img && imageBox && (_jsx(KonvaImage, { image: img, x: imageBox.x, y: imageBox.y, width: imageBox.w, height: imageBox.h })), imageBox && clip?.crop && (_jsx(Rect, { x: imageBox.x + clip.crop.x * imageBox.w, y: imageBox.y + clip.crop.y * imageBox.h, width: clip.crop.w * imageBox.w, height: clip.crop.h * imageBox.h, stroke: "#3b82f6", strokeWidth: 2, dash: [6, 3], fill: "rgba(0,0,0,0)" })), safeArea && (_jsx(Rect, { x: safeArea.x, y: safeArea.y, width: safeArea.w, height: safeArea.h, stroke: "#888", strokeWidth: 1, dash: [2, 4], fill: "rgba(0,0,0,0)", listening: false })), safeArea && clip?.ken_burns && (_jsx(Rect, { x: safeArea.x + clip.ken_burns.start_rect.x * safeArea.w, y: safeArea.y + clip.ken_burns.start_rect.y * safeArea.h, width: clip.ken_burns.start_rect.w * safeArea.w, height: clip.ken_burns.start_rect.h * safeArea.h, stroke: "#22c55e", strokeWidth: 2, dash: [4, 4], fill: "rgba(34,197,94,0.08)" })), safeArea && clip?.ken_burns && (_jsx(Rect, { x: safeArea.x + clip.ken_burns.end_rect.x * safeArea.w, y: safeArea.y + clip.ken_burns.end_rect.y * safeArea.h, width: clip.ken_burns.end_rect.w * safeArea.w, height: clip.ken_burns.end_rect.h * safeArea.h, stroke: "#ef4444", strokeWidth: 2, dash: [4, 4], fill: "rgba(239,68,68,0.08)" })), safeArea && overlays.map((overlay) => (_jsx(OverlayText, { overlay: overlay, area: safeArea }, overlay.id)))] }) }), !clip && (_jsx("div", { className: "live-preview-empty", children: "\u30AF\u30EA\u30C3\u30D7\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044" })), clip?.ken_burns && (_jsxs("div", { className: "live-preview-legend", children: [_jsx("span", { style: { color: "#22c55e" }, children: "\u25A0" }), " \u958B\u59CB", _jsx("span", { style: { color: "#ef4444", marginLeft: 8 }, children: "\u25A0" }), " \u7D42\u4E86"] }))] }));
 }

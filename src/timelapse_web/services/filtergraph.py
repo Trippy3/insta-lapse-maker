@@ -59,16 +59,19 @@ class RenderTarget:
         )
 
     @classmethod
-    def proxy(cls, project: Project, scale: float = 0.5, fps: int = 15) -> "RenderTarget":
+    def proxy(cls, project: Project, scale: float = 0.5) -> "RenderTarget":
         w = int(project.output.width * scale)
         h = int(project.output.height * scale)
         # yuv420p は偶数解像度が必要
         w = w - (w % 2)
         h = h - (h % 2)
+        # プロキシは解像度のみ縮小し、fps は出力と揃える。
+        # fps を落とすとフレーム丸めで尺が大きくズレるため (例: 15fps で 0.3s →
+        # round(4.5)=4 frame → 0.267s)、ユーザー指定の秒数と一致しなくなる。
         return cls(
             width=w,
             height=h,
-            fps=fps,
+            fps=project.output.fps,
             video_bitrate="1500k",
             video_maxrate="2000k",
             video_bufsize="3000k",

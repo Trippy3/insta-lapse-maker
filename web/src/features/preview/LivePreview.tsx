@@ -9,7 +9,7 @@ const OUTPUT_ASPECT = 9 / 16; // 出力動画の幅/高さ比 (= 9:16)
 const FALLBACK_W = 270;
 const FALLBACK_H = 480;
 
-interface SafeArea {
+interface Box {
   x: number;
   y: number;
   w: number;
@@ -36,7 +36,7 @@ function OverlayText({
   area,
 }: {
   overlay: TextOverlay;
-  area: SafeArea;
+  area: Box;
 }) {
   const fontSize = Math.max(8, Math.round((overlay.font_size_px * area.h) / 1920));
   const approxCharW = fontSize * 0.65;
@@ -80,18 +80,18 @@ export function LivePreview({ onAspectChange }: LivePreviewProps) {
     "anonymous",
   );
 
-  // 画像のアスペクト比を親 (PreviewPanel) に伝え、.preview-frame の枠が
-  // 画像比率に合わせて伸縮するようにする。
   const imageAspect = useMemo(() => {
     if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
     return img.naturalWidth / img.naturalHeight;
   }, [img]);
 
+  // 画像のアスペクト比を親 (PreviewPanel) に伝え、.preview-frame の枠が
+  // 画像比率に追従するヒントとして使う。Stage 内では別途レターボックス
+  // するため、親 CSS が効かなくても画像は歪まない。
   useEffect(() => {
     onAspectChange?.(imageAspect);
   }, [imageAspect, onAspectChange]);
 
-  // 親要素 (.preview-frame 内) の実サイズを観察し、Stage を埋める。
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({
     w: FALLBACK_W,
@@ -116,18 +116,36 @@ export function LivePreview({ onAspectChange }: LivePreviewProps) {
   const canvasW = size.w;
   const canvasH = size.h;
 
+  // Stage 内で画像をアスペクト保存して中央に配置 (object-fit:contain 相当)。
+  // 親要素の比率が画像と一致しなくても、画像は決して歪まない。
+  const imageBox: Box | null = useMemo(() => {
+    if (!imageAspect || canvasW <= 0 || canvasH <= 0) return null;
+    const stageAspect = canvasW / canvasH;
+    if (imageAspect >= stageAspect) {
+      // 画像が横長: 幅をフィットさせて上下にレターボックス
+      const w = canvasW;
+      const h = canvasW / imageAspect;
+      return { x: 0, y: (canvasH - h) / 2, w, h };
+    }
+    // 画像が縦長: 高さをフィットさせて左右にレターボックス
+    const h = canvasH;
+    const w = canvasH * imageAspect;
+    return { x: (canvasW - w) / 2, y: 0, w, h };
+  }, [imageAspect, canvasW, canvasH]);
+
   // 出力動画 (9:16) のセーフエリアを scale+pad の挙動と同じく中央に配置する。
   // crop 設定時はサーバ側 scale_pad は crop 後の画像で動作するため、
   // ここでは未設定時 (= 元画像) のセーフエリアを描画する近似実装とする。
-  const safeArea: SafeArea | null = useMemo(() => {
-    if (!imageAspect || canvasW <= 0 || canvasH <= 0) return null;
-    if (imageAspect >= OUTPUT_ASPECT) {
-      const safeW = canvasH * OUTPUT_ASPECT;
-      return { x: (canvasW - safeW) / 2, y: 0, w: safeW, h: canvasH };
+  const safeArea: Box | null = useMemo(() => {
+    if (!imageBox) return null;
+    const ib = imageBox;
+    if (ib.w / ib.h >= OUTPUT_ASPECT) {
+      const safeW = ib.h * OUTPUT_ASPECT;
+      return { x: ib.x + (ib.w - safeW) / 2, y: ib.y, w: safeW, h: ib.h };
     }
-    const safeH = canvasW / OUTPUT_ASPECT;
-    return { x: 0, y: (canvasH - safeH) / 2, w: canvasW, h: safeH };
-  }, [imageAspect, canvasW, canvasH]);
+    const safeH = ib.w / OUTPUT_ASPECT;
+    return { x: ib.x, y: ib.y + (ib.h - safeH) / 2, w: ib.w, h: safeH };
+  }, [imageBox]);
 
   return (
     <div
@@ -138,23 +156,23 @@ export function LivePreview({ onAspectChange }: LivePreviewProps) {
       <Stage width={canvasW} height={canvasH}>
         <Layer>
           <Rect x={0} y={0} width={canvasW} height={canvasH} fill="#111" />
-          {img && (
+          {img && imageBox && (
             <KonvaImage
               image={img}
-              x={0}
-              y={0}
-              width={canvasW}
-              height={canvasH}
+              x={imageBox.x}
+              y={imageBox.y}
+              width={imageBox.w}
+              height={imageBox.h}
             />
           )}
 
-          {/* トリミング矩形は元画像の正規化座標 → Stage 全体にマップ */}
-          {clip?.crop && (
+          {/* トリミング矩形は元画像の正規化座標 → imageBox にマップ */}
+          {imageBox && clip?.crop && (
             <Rect
-              x={clip.crop.x * canvasW}
-              y={clip.crop.y * canvasH}
-              width={clip.crop.w * canvasW}
-              height={clip.crop.h * canvasH}
+              x={imageBox.x + clip.crop.x * imageBox.w}
+              y={imageBox.y + clip.crop.y * imageBox.h}
+              width={clip.crop.w * imageBox.w}
+              height={clip.crop.h * imageBox.h}
               stroke="#3b82f6"
               strokeWidth={2}
               dash={[6, 3]}

@@ -38,7 +38,7 @@ def test_render_produces_playable_mp4(tmp_path: Path, ffmpeg_present):
             Clip(id="c1", source_path=str(b), order_index=1, duration_s=0.4),
         ],
     )
-    target = RenderTarget.proxy(project)  # 高速化のため 540x960/15fps
+    target = RenderTarget.proxy(project)  # 高速化のため 540x960 (fps は出力と同一)
     out = tmp_path / "out.mp4"
 
     progress_values: list[float] = []
