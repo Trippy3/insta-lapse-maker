@@ -172,6 +172,44 @@ def test_two_stage_render_matches_single_stage(tmp_path: Path, ffmpeg_present):
     )
 
 
+def test_render_with_mixed_cut_and_xfade_transitions(tmp_path: Path, ffmpeg_present):
+    """CUT + XFADE 混在で動画生成が成功すること (回帰テスト)。
+
+    concat の出力タイムベース (1/1000000) と xfade の入力タイムベース (1/{fps})
+    が不一致になり「First input link main timebase do not match the
+    corresponding second input link xfade timebase」エラーで失敗していた。
+    """
+    files = [
+        _make_image(tmp_path / f"mix{i}.jpg", (i * 30, 100, 200 - i * 30))
+        for i in range(5)
+    ]
+    project = Project(
+        clips=[
+            Clip(id=f"m{i}", source_path=str(files[i]), order_index=i, duration_s=0.5)
+            for i in range(5)
+        ],
+        # m0→(cut)→m1→(fade)→m2→(cut)→m3→(fade)→m4
+        # → 単一クリップ + 複数クリップ concat の混在パターンを再現
+        transitions=[
+            Transition(after_clip_id="m0", kind=TransitionKind.CUT, duration_s=0.0),
+            Transition(after_clip_id="m1", kind=TransitionKind.FADE, duration_s=0.2),
+            Transition(after_clip_id="m2", kind=TransitionKind.CUT, duration_s=0.0),
+            Transition(after_clip_id="m3", kind=TransitionKind.FADE, duration_s=0.2),
+        ],
+    )
+    target = RenderTarget.proxy(project)
+
+    # 単一ステージ
+    out_single = tmp_path / "mixed_single.mp4"
+    run_render(project, target, out_single)
+    assert out_single.is_file() and out_single.stat().st_size > 0
+
+    # 二段階ステージ (実運用では plan_render で xfade ありなら強制 two-stage)
+    out_two = tmp_path / "mixed_two.mp4"
+    run_two_stage_render(project, target, out_two)
+    assert out_two.is_file() and out_two.stat().st_size > 0
+
+
 def test_render_with_text_overlay_produces_mp4(tmp_path: Path, ffmpeg_present):
     """テキストオーバーレイがある状態で最終 MP4 が生成される。"""
     a = _make_image(tmp_path / "a.jpg", (30, 80, 200))

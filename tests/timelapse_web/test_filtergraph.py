@@ -66,8 +66,10 @@ def test_ffmpeg_command_has_required_flags(tmp_path: Path):
     assert "-movflags +faststart" in joined
     assert "-pix_fmt yuv420p" in joined
     assert "-filter_complex" in cmd
-    # 各クリップに対して -loop 1 ... -i ... が並ぶ
-    assert cmd.count("-loop") == 2
+    # ループは filter_complex 内の loop フィルタで行う (-loop 入力オプションは不使用)
+    assert "-loop" not in cmd
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "loop=" in fc
     # 無音ダミーの anullsrc 入力
     assert any("anullsrc" in c for c in cmd)
 
@@ -357,6 +359,79 @@ def test_mixed_cut_and_xfade(tmp_path: Path):
     assert "concat=n=2" in fc
     # その後 c2 と xfade
     assert "xfade=transition=fade" in fc
+    # concat の出力タイムベースは AV_TIME_BASE_Q (1/1000000) に強制リセット
+    # されるため、xfade に渡す前に settb=1/{fps} で再正規化されていること。
+    assert "concat=n=2:v=1:a=0,settb=1/30" in fc
+
+
+def test_stage2_concat_followed_by_settb_when_xfade_present(tmp_path: Path):
+    """Stage 2 (個別 MP4 → 連結) でも concat の直後に settb が必須。
+
+    `concat=...:v=1:a=0` の出力タイムベースは AV_TIME_BASE_Q (1/1000000) に
+    強制リセットされるため、xfade 入力前に settb=1/{fps} で再正規化しないと
+    `First input link main timebase (1/15) do not match the corresponding
+    second input link xfade timebase (1/1000000)` で失敗する。
+    """
+    import re
+
+    from timelapse_web.services.renderer import _build_concat_xfade_command
+
+    # 4 クリップ: cut → fade → cut パターン
+    clip_paths = [tmp_path / f"c{i}.mp4" for i in range(4)]
+    for p in clip_paths:
+        p.write_bytes(b"\x00")
+    durations = [1.0, 1.0, 1.0, 1.0]
+    transitions = [
+        Transition(after_clip_id="x0", kind=TransitionKind.CUT, duration_s=0.0),
+        Transition(after_clip_id="x1", kind=TransitionKind.FADE, duration_s=0.5),
+        Transition(after_clip_id="x2", kind=TransitionKind.CUT, duration_s=0.0),
+    ]
+    target = RenderTarget(width=540, height=960, fps=15)
+    cmd = _build_concat_xfade_command(
+        clip_paths, durations, transitions, target, tmp_path / "out.mp4", "ffmpeg"
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    concat_without_settb = re.findall(r"concat=n=\d+:v=1:a=0(?!,settb)", fc)
+    assert not concat_without_settb, (
+        f"concat without settb followups: {concat_without_settb} in {fc}"
+    )
+    assert f"settb=1/{target.fps}" in fc
+
+
+def test_concat_followed_by_settb_when_xfade_present(tmp_path: Path):
+    """concat の直後には必ず settb=1/{fps} が続くこと。
+
+    FFmpeg の concat フィルタは出力タイムベースを AV_TIME_BASE_Q (1/1000000)
+    に強制リセットする。一方 xfade は両入力のタイムベース一致を要求するため、
+    concat の後に settb で再正規化しないと
+    `First input link main timebase do not match the corresponding second
+    input link xfade timebase` エラーになる。
+    """
+    import re
+
+    files = [tmp_path / f"{n}.jpg" for n in ("a", "b", "c", "d")]
+    for f in files:
+        f.write_bytes(b"\x00")
+    # c0 →(cut)→ c1 →(fade)→ c2 →(cut)→ c3
+    # → segment0=[c0,c1] (concat), segment1=[c2,c3] (concat) を xfade で連結
+    project = Project(
+        clips=[
+            Clip(id=f"q{i}", source_path=str(files[i]), order_index=i, duration_s=1.0)
+            for i in range(4)
+        ],
+        transitions=[
+            Transition(after_clip_id="q0", kind=TransitionKind.CUT, duration_s=0.0),
+            Transition(after_clip_id="q1", kind=TransitionKind.FADE, duration_s=0.5),
+            Transition(after_clip_id="q2", kind=TransitionKind.CUT, duration_s=0.0),
+        ],
+    )
+    target = RenderTarget(width=1080, height=1920, fps=30)
+    fc = build_filter_complex(project, target)
+    # concat 出力のタイムベース正規化が抜けていないこと
+    concat_without_settb = re.findall(r"concat=n=\d+:v=1:a=0(?!,settb)", fc)
+    assert not concat_without_settb, (
+        f"concat without settb followups: {concat_without_settb} in {fc}"
+    )
 
 
 # ---- plan_render ----
@@ -385,6 +460,50 @@ def test_plan_render_two_stage_many_clips(tmp_path: Path):
     target = RenderTarget.from_project(project)
     plan = plan_render(project, target)
     assert plan.two_stage
+
+
+def test_plan_render_two_stage_when_xfade_transition(tmp_path: Path):
+    """xfade (非 cut) トランジションがあれば少数クリップでも二段階レンダを選択する。
+    単一ステージでは JPEG の -loop 1 再デコード時にタイムベースが 1/1000000 に
+    リセットされ xfade が失敗するため、二段階レンダが必須。
+    """
+    project = _project_2clips(tmp_path)
+    project.transitions = [
+        Transition(after_clip_id=project.clips[0].id, kind=TransitionKind.CROSSFADE, duration_s=0.3),
+    ]
+    target = RenderTarget.from_project(project)
+    plan = plan_render(project, target)
+    assert plan.two_stage, "xfade トランジション時は必ず two_stage=True"
+
+
+def test_plan_render_two_stage_for_all_xfade_kinds(tmp_path: Path):
+    """CUT 以外の全トランジション種別で two_stage=True になる。"""
+    non_cut_kinds = [
+        TransitionKind.FADE,
+        TransitionKind.CROSSFADE,
+        TransitionKind.WIPE_LEFT,
+        TransitionKind.WIPE_RIGHT,
+        TransitionKind.SLIDE_UP,
+    ]
+    for kind in non_cut_kinds:
+        project = _project_2clips(tmp_path)
+        project.transitions = [
+            Transition(after_clip_id=project.clips[0].id, kind=kind, duration_s=0.3),
+        ]
+        target = RenderTarget.from_project(project)
+        plan = plan_render(project, target)
+        assert plan.two_stage, f"{kind} は two_stage=True でなければならない"
+
+
+def test_plan_render_single_stage_for_cut_transition(tmp_path: Path):
+    """CUT トランジションのみなら単一ステージのまま。"""
+    project = _project_2clips(tmp_path)
+    project.transitions = [
+        Transition(after_clip_id=project.clips[0].id, kind=TransitionKind.CUT, duration_s=0.0),
+    ]
+    target = RenderTarget.from_project(project)
+    plan = plan_render(project, target)
+    assert not plan.two_stage
 
 
 # ---- Phase 5: テキストオーバーレイ / drawtext ----

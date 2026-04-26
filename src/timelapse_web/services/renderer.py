@@ -78,9 +78,7 @@ def _build_clip_only_command(
     from pathlib import Path as _Path
     cmd = [ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1"]
     cmd += [
-        "-loop", "1",
         "-framerate", str(target.fps),
-        "-t", f"{clip.duration_s:.6f}",
         "-i", str(_Path(clip.source_path).expanduser().resolve()),
     ]
     anull_idx = 1
@@ -135,11 +133,18 @@ def _build_concat_xfade_command(
     has_overlays = bool(overlays)
     base_label = "vout_base" if has_overlays else "vout"
 
+    # MP4 コンテナのタイムベース (1/15000 など) を target fps に正規化してから
+    # concat / xfade に渡す。タイムベース不一致で xfade が失敗するのを防ぐ。
+    for i in range(n):
+        filters.append(
+            f"[{i}:v]settb=1/{target.fps},setpts=PTS-STARTPTS[nv{i}]"
+        )
+
     # Check if any non-cut transition
     has_xfade = any(tr is not None and tr.kind != TransitionKind.CUT for tr in transitions)
 
     if not has_xfade:
-        inputs = "".join(f"[{i}:v]" for i in range(n))
+        inputs = "".join(f"[nv{i}]" for i in range(n))
         filters.append(f"{inputs}concat=n={n}:v=1:a=0[{base_label}]")
     else:
         # Group into segments (same logic as filtergraph)
@@ -158,11 +163,16 @@ def _build_concat_xfade_command(
         for k, (seg_items, _) in enumerate(segments):
             if len(seg_items) == 1:
                 idx = seg_items[0][0]
-                seg_labels.append(f"{idx}:v")
+                seg_labels.append(f"nv{idx}")
             else:
-                inputs = "".join(f"[{idx}:v]" for idx, _ in seg_items)
+                # concat の出力タイムベースは AV_TIME_BASE_Q (1/1000000) に
+                # 強制リセットされるため、xfade に渡す前に settb で再正規化する。
+                inputs = "".join(f"[nv{idx}]" for idx, _ in seg_items)
                 label = f"seg{k}"
-                filters.append(f"{inputs}concat=n={len(seg_items)}:v=1:a=0[{label}]")
+                filters.append(
+                    f"{inputs}concat=n={len(seg_items)}:v=1:a=0,"
+                    f"settb=1/{target.fps}[{label}]"
+                )
                 seg_labels.append(label)
 
         seg_durations = [sum(dur for _, dur in items) for items, _ in segments]

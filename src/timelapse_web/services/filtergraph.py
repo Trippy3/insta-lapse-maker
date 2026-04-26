@@ -151,12 +151,17 @@ def _scale_pad_filter(target: RenderTarget) -> str:
 def build_clip_chain(clip: Clip, target: RenderTarget, stream_idx: int) -> str:
     """1 クリップ分のフィルタチェーン (入力ラベル → [v<idx>])。
 
-    順序: crop? → scale+pad (target サイズ) → (Ken Burns があれば zoompan) → format → fps
-    zoompan は scale+pad 後の target 解像度の上で矩形補間する設計。
+    順序: loop+trim+setpts → crop? → scale+pad → (zoompan?) → format → fps → settb
+    JPEG を -loop 1 で繰り返しデコードするとタイムベースが 1/1000000 にリセット
+    されて xfade が失敗するため、loop フィルタで単一フレームをメモリ上でループする。
     """
+    n_frames = max(1, round(clip.duration_s * target.fps))
     parts: list[str] = []
     parts.append(f"[{stream_idx}:v]")
     sub: list[str] = []
+    sub.append(f"loop=loop=-1:size=1:start=0")
+    sub.append(f"trim=end_frame={n_frames}")
+    sub.append(f"setpts=PTS-STARTPTS")
     if (cf := _crop_filter(clip.crop)) is not None:
         sub.append(cf)
     sub.append(_scale_pad_filter(target))
@@ -164,6 +169,7 @@ def build_clip_chain(clip: Clip, target: RenderTarget, stream_idx: int) -> str:
         sub.append(build_zoompan_filter(clip.ken_burns, clip.duration_s, target))
     sub.append(f"format={VIDEO_PIX_FMT}")
     sub.append(f"fps={target.fps}")
+    sub.append(f"settb=1/{target.fps}")
     parts.append(",".join(sub))
     parts.append(f"[v{stream_idx}]")
     return "".join(parts)
@@ -315,6 +321,8 @@ def build_filter_complex(project: Project, target: RenderTarget) -> str:
         filters.append(f"{inputs}concat=n={len(seg_clips)}:v=1:a=0[{base_label}]")
     else:
         # セグメントごとに内部 concat を作り、ラベルを決定
+        # concat の出力タイムベースは AV_TIME_BASE_Q (1/1000000) に強制
+        # リセットされるため、xfade に渡す前に settb で再正規化する。
         seg_labels: list[str] = []
         for k, (seg_clips, _) in enumerate(segments):
             if len(seg_clips) == 1:
@@ -322,7 +330,10 @@ def build_filter_complex(project: Project, target: RenderTarget) -> str:
             else:
                 inputs = "".join(f"[v{clip_idx[c.id]}]" for c in seg_clips)
                 label = f"seg{k}"
-                filters.append(f"{inputs}concat=n={len(seg_clips)}:v=1:a=0[{label}]")
+                filters.append(
+                    f"{inputs}concat=n={len(seg_clips)}:v=1:a=0,"
+                    f"settb=1/{target.fps}[{label}]"
+                )
                 seg_labels.append(label)
 
         # セグメント間を xfade でペアワイズ連結
@@ -368,10 +379,24 @@ class RenderPlan:
 
 
 def plan_render(project: Project, target: RenderTarget) -> RenderPlan:
-    """クリップ数または filter_complex 長が閾値を超えたら二段階レンダを選択する。"""
+    """クリップ数・filter_complex 長・xfade 有無に応じて二段階レンダを選択する。
+
+    xfade 使用時は単一ステージで JPEG を -loop 1 で繰り返しデコードすると
+    2 回目以降のデコードでタイムベースが 1/1000000 にリセットされ xfade が
+    失敗するため、常に二段階レンダを選択する。
+    """
     clips = project.sorted_clips()
     if len(clips) > 25:
         return RenderPlan(two_stage=True, reason="clips > 25")
+
+    tr_by_clip_id = {t.after_clip_id: t for t in project.transitions}
+    has_xfade = any(
+        tr.kind != TransitionKind.CUT
+        for tr in tr_by_clip_id.values()
+    )
+    if has_xfade:
+        return RenderPlan(two_stage=True, reason="xfade transitions")
+
     try:
         fc = build_filter_complex(project, target)
         if len(fc) > 30000:
@@ -394,12 +419,10 @@ def build_ffmpeg_command(
 
     cmd: list[str] = [ffmpeg_path, "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1"]
 
-    # 各クリップを静止画ループ入力として追加
+    # 各クリップを静止画入力として追加 (ループは filter_complex 内の loop フィルタで行う)
     for clip in clips:
         cmd += [
-            "-loop", "1",
             "-framerate", str(target.fps),
-            "-t", f"{clip.duration_s:.6f}",
             "-i", str(Path(clip.source_path).expanduser().resolve()),
         ]
 
