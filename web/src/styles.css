@@ -136,6 +136,12 @@ input[type="text"], input[type="number"] {
   color: var(--text-dim);
 }
 
+/* 編集プレビューは画像比率に追従するため、9:16 枠より広い領域を許可する */
+.preview-frame--live {
+  height: min(100%, 60vh, 600px);
+  max-width: min(100%, 600px);
+}
+
 .preview-frame video {
   width: 100%;
   height: 100%;

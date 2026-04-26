@@ -7,6 +7,7 @@ type PreviewMode = "live" | "video";
 
 export function PreviewPanel() {
   const [mode, setMode] = useState<PreviewMode>("live");
+  const [liveAspect, setLiveAspect] = useState<number | null>(null);
   const jobs = useProjectStore((s) => s.jobs);
 
   const videoJob = useMemo(() => {
@@ -17,6 +18,15 @@ export function PreviewPanel() {
         .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0] ?? null;
     return latest("proxy") ?? latest("final");
   }, [jobs]);
+
+  // 編集プレビューでは選択中クリップの画像比率に枠を追従させる。
+  // 動画プレビューは出力比率 (9:16) 固定。
+  const frameStyle =
+    mode === "live" && liveAspect != null
+      ? { aspectRatio: `${liveAspect}` }
+      : undefined;
+  const frameClass =
+    mode === "live" ? "preview-frame preview-frame--live" : "preview-frame";
 
   return (
     <div className="center">
@@ -35,9 +45,9 @@ export function PreviewPanel() {
         </button>
       </div>
 
-      <div className="preview-frame">
+      <div className={frameClass} style={frameStyle}>
         {mode === "live" ? (
-          <LivePreview />
+          <LivePreview onAspectChange={setLiveAspect} />
         ) : videoJob ? (
           <video
             key={videoJob.id}
