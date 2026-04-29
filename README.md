@@ -1,6 +1,10 @@
 # Insta-Lapse-Maker
 
-絵画制作過程の写真群から **Instagram Reels 用タイムラプス動画** (1080×1920 / 30fps / H.264) を生成するツールです。ブラウザ上で編集できる **Web UI** と、フォルダを指定するだけで動画化する **CLI** の 2 つの使い方があります。
+絵画制作過程の写真群から **Instagram Reels 用タイムラプス動画** (1080×1920 / 30fps / H.264) を生成するツールです。次の 3 通りの使い方があります:
+
+- 🖥️ **Web UI** — ブラウザ上でクリップ・カメラワーク・トランジションを GUI で編集
+- ⌨️ **CLI** — フォルダを指定するだけでワンショット生成
+- 🤖 **AI エージェント (Skills)** — [Claude Code](https://claude.com/claude-code) などのエージェントに「こんな雰囲気でタイムラプス作って」と話しかけるだけで、計画提案 → 承認 → レンダまで案内してもらう
 
 <img width="1693" height="844" alt="timelaspe_maker" src="https://github.com/user-attachments/assets/7f27867e-c9b0-4cb6-9430-4bc43579f6f0" />
 
@@ -133,6 +137,33 @@ uv run timelapse generate ./photos -o timelapse.mp4 -d 0.5
 
 ---
 
+## AI エージェントから使う (Skills)
+
+[Claude Code](https://claude.com/claude-code) などのエージェントに「こんな雰囲気で動画作って」と話しかけるだけで、計画提案・承認・レンダまでを案内してもらえます。
+
+### セットアップ
+
+```bash
+uv sync
+ln -sf "$(pwd)/skills/timelapse-maker" ~/.claude/skills/timelapse-maker
+```
+
+シンボリックリンクされていれば Claude Code 起動時に自動で読み込まれます。
+
+### 使い方
+
+Claude Code に自然な依頼を送るだけです:
+
+```
+/home/user/painting_photos の写真でタイムラプスを作りたい。ゆっくり見せたい感じで。
+```
+
+エージェントが画像を確認し、雰囲気と枚数から表示秒数・トランジション・カメラワークを選んで制作計画を提示します。承認後は動画 (`.mp4`) と編集用プロジェクト (`.tlproj.json`) が画像と同じ場所に保存され、後者は Web UI でそのまま再編集できます。
+
+判断ロジック・制約の詳細は [`skills/timelapse-maker/SKILL.md`](skills/timelapse-maker/SKILL.md) を参照してください。
+
+---
+
 ## 出力動画について
 
 すべての出力は Instagram Reels 仕様 (1080×1920 / H.264 / 30fps / AAC) に準拠します。セーフゾーン・対応画像フォーマット・アスペクト比モードの詳細は [`docs/reels-spec.md`](docs/reels-spec.md) を参照してください。
@@ -176,26 +207,43 @@ cd web && pnpm build
 
 ```
 src/
-├── timelapse/             # CLI ツール
+├── timelapse/             # CLI (バッチ生成)
 │   ├── cli.py             # Typer エントリポイント
-│   ├── reels_spec.py      # 出力仕様の定数 (CLI / Web 共有)
-│   ├── discovery.py       # 画像列挙・ソート
+│   ├── reels_spec.py      # 出力仕様の定数 (CLI / Web / Agent 共有)
+│   ├── discovery.py       # 画像列挙・ソート (filename / EXIF)
 │   ├── normalize.py       # リサイズ・パディング・EXIF 回転
 │   ├── encoder.py         # FFmpeg 呼び出し
+│   ├── similarity.py      # 重複画像検出 (find-similar)
 │   └── system.py          # FFmpeg 検出
+├── timelapse_agent/       # AI エージェント連携 CLI (Skills 用)
+│   ├── cli.py             # inspect / scaffold / render の 3 サブコマンド
+│   ├── inspector.py       # 画像メタデータの JSON 出力
+│   └── planner.py         # 雛形プロジェクト (.tlproj.json) 生成
 └── timelapse_web/         # FastAPI バックエンド
     ├── api/               # REST + SSE エンドポイント
-    ├── models/project.py  # Pydantic データモデル
+    ├── models/
+    │   ├── project.py     # Pydantic データモデル (*.tlproj.json スキーマ)
+    │   └── jobs.py        # レンダジョブ定義
     └── services/
-        ├── filtergraph.py # filter_complex 生成 (CLI / Web で同一)
-        ├── renderer.py    # FFmpeg 実行・進捗配信
-        └── job_queue.py   # 単一ワーカーキュー
+        ├── filtergraph.py # filter_complex 生成 (CLI / Web / Agent 共通)
+        ├── renderer.py    # FFmpeg 実行・進捗配信・二段階レンダ
+        ├── job_queue.py   # 単一ワーカーキュー
+        ├── project_store.py  # *.tlproj.json の永続化 (原子的書き込み)
+        ├── thumbnail.py   # サムネイル / プロキシ生成
+        └── native_picker.py  # OS ネイティブファイルダイアログ
 
-web/src/                   # React + Vite + Zustand フロントエンド
-└── features/              # 機能別コンポーネント (kenburns / transitions / crop / preview ...)
+web/src/                   # React 19 + Vite + Zustand フロントエンド
+└── features/              # 機能別コンポーネント
+                           # timeline / crop / kenburns / transitions /
+                           # overlay (text) / preview / library / render /
+                           # fspicker / project
+
+skills/timelapse-maker/    # Claude Code 向け Skill 定義
+└── SKILL.md               # エージェントの判断ロジックと実行手順
 ```
 
-CLI と Web UI は `filtergraph.py` / `reels_spec.py` を共有しており、出力品質は完全に一致します。
+CLI / Web UI / AI エージェントの 3 通りはすべて `filtergraph.py` と `reels_spec.py` を共有しており、出力品質は完全に一致します。AI エージェント版は内部で `timelapse_agent` CLI を呼び、生成されたプロジェクトは Web UI でそのまま開けます。
+
 バックエンド設計の詳細は [`docs/web-architecture.md`](docs/web-architecture.md)、機能別の設計と受け入れ基準は [`docs/web-plan.md`](docs/web-plan.md) を参照してください。
 
 ### ドキュメント一覧

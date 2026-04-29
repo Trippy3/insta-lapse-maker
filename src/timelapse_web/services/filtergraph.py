@@ -154,17 +154,19 @@ def _scale_pad_filter(target: RenderTarget) -> str:
 def build_clip_chain(clip: Clip, target: RenderTarget, stream_idx: int) -> str:
     """1 クリップ分のフィルタチェーン (入力ラベル → [v<idx>])。
 
-    順序: loop+trim+setpts → crop? → scale+pad → (zoompan?) → format → fps → settb
-    JPEG を -loop 1 で繰り返しデコードするとタイムベースが 1/1000000 にリセット
-    されて xfade が失敗するため、loop フィルタで単一フレームをメモリ上でループする。
+    Ken Burns なし: loop+trim で n_frames を生成してから scale+pad。
+    Ken Burns あり: 1 フレームを crop+scale+pad した後に zoompan へ渡す。
+      zoompan の d パラメータは「1 入力フレームあたりの出力フレーム数」であるため、
+      loop+trim で複数フレームを作ると d×n_frames フレームが生成されてしまう。
     """
     n_frames = max(1, round(clip.duration_s * target.fps))
     parts: list[str] = []
     parts.append(f"[{stream_idx}:v]")
     sub: list[str] = []
-    sub.append(f"loop=loop=-1:size=1:start=0")
-    sub.append(f"trim=end_frame={n_frames}")
-    sub.append(f"setpts=PTS-STARTPTS")
+    if clip.ken_burns is None:
+        sub.append(f"loop=loop=-1:size=1:start=0")
+        sub.append(f"trim=end_frame={n_frames}")
+        sub.append(f"setpts=PTS-STARTPTS")
     if (cf := _crop_filter(clip.crop)) is not None:
         sub.append(cf)
     sub.append(_scale_pad_filter(target))
