@@ -9,7 +9,8 @@
   - パッケージ管理: uv (Python)、pnpm (JS)
 - **主要モジュール**:
   - `src/timelapse/` — CLI (バッチ生成、画像探索・エンコード・正規化・類似画像検出)
-  - `src/timelapse_agent/` — AI エージェント向け CLI (Skills 連携、`inspect` / `scaffold` / `render`)
+  - `src/timelapse_agent/` — AI エージェント向け CLI (Skills 連携、`inspect` / `scaffold` / `render` / `crop-grid`)
+    - `grid_overlay.py` — クロップ視認支援 (Pillow でグリッド付きサムネイル生成)
   - `src/timelapse_web/` — Web API サーバ (FastAPI)
     - `services/filtergraph.py` — FFmpeg filter_complex 生成の中核 (CLI / Web / Agent 共通)
     - `services/renderer.py` — FFmpeg 実行と進捗配信、二段階レンダ自動切替
@@ -46,6 +47,7 @@ cd web && pnpm build
 uv run python -m timelapse_agent inspect <ディレクトリ>
 uv run python -m timelapse_agent scaffold <ディレクトリ> --output /tmp/test.tlproj.json
 uv run python -m timelapse_agent render /tmp/test.tlproj.json --dry-run
+uv run python -m timelapse_agent crop-grid <ディレクトリ> --output-dir /tmp/grid/
 ```
 
 - 実装の詳細要件は `docs/web-plan.md` を参照

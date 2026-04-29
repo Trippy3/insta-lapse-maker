@@ -20,6 +20,7 @@ from timelapse_web.services.filtergraph import RenderTarget, plan_render
 from timelapse_web.services.project_store import load_project, save_project
 from timelapse_web.services.renderer import run_render
 
+from .grid_overlay import overlay_grid_directory
 from .inspector import inspect_directory
 from .planner import scaffold_project
 
@@ -137,6 +138,41 @@ def render(
         "duration_s": round(project.total_visible_duration_s(), 3),
     }
     print(json.dumps(result, ensure_ascii=False), flush=True)
+
+
+@app.command(name="crop-grid")
+def crop_grid(
+    directory: Annotated[Path, typer.Argument(help="画像ディレクトリのパス")],
+    output_dir: Annotated[Path, typer.Option(help="グリッド付きサムネイルの出力先ディレクトリ")],
+    max_side: Annotated[int, typer.Option(help="出力画像の長辺 px（原画像より大きい値でも拡大しない）")] = 900,
+    grid_step: Annotated[int, typer.Option(help="グリッド間隔 %（1〜50）。10 なら 10/20/...90 に線が入る")] = 10,
+    sort: Annotated[str, typer.Option(help="並び順: filename | exif")] = "filename",
+    recursive: Annotated[bool, typer.Option(help="サブディレクトリも対象にする")] = False,
+) -> None:
+    """画像にグリッドを重ねた視認用サムネイルを一括生成する。
+
+    クロップ範囲を視認で決める時に使う。グリッド線とラベル (10% 刻みなど) を見ながら
+    切り出したい矩形の輪郭の正規化座標を読み取り、.tlproj.json の clip[*].crop に記入する。
+    """
+    sort_order = SortOrder.EXIF_DATETIME if sort == "exif" else SortOrder.FILENAME
+    directory = directory.expanduser().resolve()
+    output_dir = output_dir.expanduser().resolve()
+
+    results = overlay_grid_directory(
+        directory,
+        output_dir,
+        max_side=max_side,
+        grid_step_pct=grid_step,
+        sort_order=sort_order,
+        recursive=recursive,
+    )
+    payload = {
+        "status": "ok",
+        "output_dir": str(output_dir),
+        "count": len(results),
+        "files": [str(r.output) for r in results],
+    }
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 def main() -> None:
